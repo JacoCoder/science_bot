@@ -52,75 +52,6 @@
             background: #94a3b8;
         }
     </style>
-    <!-- Firebase Imports for Authentication and Persistence -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, setLogLevel, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Global variables provided by the environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        let db, auth;
-        let userId = null;
-        let isAuthReady = false;
-
-        window.firebaseApp = {
-            db: null,
-            auth: null,
-            appId: appId,
-            initialAuthToken: initialAuthToken
-        };
-        
-        const CHAT_COLLECTION = "chat_messages"; 
-        
-        if (Object.keys(firebaseConfig).length > 0) {
-            const app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-            window.firebaseApp.db = db;
-            window.firebaseApp.auth = auth;
-            // setLogLevel('Debug'); // Uncomment for debugging
-        }
-
-        // Handle Authentication
-        if (auth) {
-            onAuthStateChanged(auth, async (user) => {
-                let currentUserId = null;
-                
-                if (user) {
-                    // 1. User is already authenticated
-                    currentUserId = user.uid;
-                } else {
-                    // 2. User needs to sign in (anonymously or with custom token)
-                    try {
-                        const signInPromise = initialAuthToken 
-                            ? signInWithCustomToken(auth, initialAuthToken)
-                            : signInAnonymously(auth);
-                        
-                        const cred = await signInPromise; // Await the sign-in promise
-                        currentUserId = cred.user.uid;
-
-                    } catch (error) {
-                        console.error("Firebase Sign-in Failed:", error);
-                        // currentUserId remains null on failure
-                    }
-                }
-                
-                // 3. Dispatch ready state ONLY if we successfully obtained a userId and haven't already
-                if (currentUserId && !isAuthReady) { 
-                    userId = currentUserId;
-                    isAuthReady = true;
-                    // Start listening for chat messages
-                    document.dispatchEvent(new CustomEvent('authReady')); 
-                } else if (!currentUserId) {
-                     console.error("Authentication failed: Could not determine user ID. Chat functions disabled.");
-                }
-            });
-        }
-    </script>
 </head>
 <body class="p-4 flex items-center justify-center min-h-screen">
     <div id="chat-widget" class="w-full max-w-2xl bg-white shadow-xl rounded-2xl p-6 flex flex-col h-[90vh]">
@@ -136,8 +67,7 @@
 
         <!-- Chat Display Area -->
         <div id="messages" class="chat-container flex-grow py-4 space-y-4">
-            <!-- Messages will be injected here by the Firestore listener -->
-            <div id="auth-loading" class="text-center text-gray-500 italic mt-4">Initializing magic... Please wait for authentication.</div>
+            <!-- Messages will be injected here -->
         </div>
 
         <!-- Input Area -->
@@ -146,7 +76,7 @@
                 <input type="text" id="user-input" placeholder="Type your query here..."
                        class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150"
                        onkeydown="if(event.key === 'Enter') sendMessage()">
-                <button id="send-button" onclick="sendMessage()" disabled
+                <button id="send-button" onclick="sendMessage()"
                         class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition duration-150 flex items-center justify-center disabled:bg-indigo-400">
                     <span id="send-text">Send</span>
                     <svg id="loading-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -158,32 +88,22 @@
         </div>
     </div>
 
-    <script type="module">
-        import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
+    <script>
         const userInput = document.getElementById('user-input');
         const messagesContainer = document.getElementById('messages');
         const sendButton = document.getElementById('send-button');
         const sendText = document.getElementById('send-text');
         const loadingSpinner = document.getElementById('loading-spinner');
-        const authLoadingDiv = document.getElementById('auth-loading');
 
         // --- API & Model Configuration ---
-        // !!! IMPORTANT: The API_KEY must be inserted here for external hosting. !!!
+        // !!! IMPORTANT: Insert your Gemini API Key here for the bot to function !!!
         const API_KEY = "AIzaSyB0VYddwvfQtAKVeD2zyk7PzVYvALMLiVg"; 
         const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
         
-        let chatHistory = [];
-        const CHAT_COLLECTION = "chat_messages";
+        const CHAT_KEY = "mcgonagall_chat_history";
+        let chatHistory = []; // Stores history in Gemini API format
         
-        // Wait for Firebase to initialize and authenticate before proceeding
-        document.addEventListener('authReady', () => {
-            authLoadingDiv.classList.add('hidden');
-            sendButton.disabled = false;
-            loadChatHistory();
-        });
-
-
+        
         /**
          * Utility function for exponential backoff retry logic.
          */
@@ -204,7 +124,7 @@
         }
 
         /**
-         * Adds a message bubble to the chat interface. (Used by onSnapshot)
+         * Adds a message bubble to the chat interface.
          */
         function displayMessage(text, sender, sources = []) {
             const messageWrapper = document.createElement('div');
@@ -262,6 +182,8 @@
          * Toggles the loading state for the button and input field.
          */
         function setLoading(isLoading) {
+            sendButton.disabled = isLoading;
+            userInput.disabled = isLoading;
             if (isLoading) {
                 sendText.classList.add('hidden');
                 loadingSpinner.classList.remove('hidden');
@@ -272,74 +194,58 @@
         }
 
         /**
-         * Saves a message (user or bot) to Firestore.
+         * Saves the current chat history to localStorage.
          */
-        async function saveMessage(sender, text, sources = null) {
-            const { db, appId } = window.firebaseApp;
-            const userId = window.firebaseApp.auth?.currentUser?.uid;
-
-            if (!db || !userId) {
-                console.error("Firestore or user not ready. Cannot save message.");
-                return;
-            }
-            const path = `artifacts/${appId}/users/${userId}/${CHAT_COLLECTION}`;
+        function saveHistory() {
             try {
-                await addDoc(collection(db, path), {
-                    sender: sender,
-                    text: text,
-                    sources: sources,
-                    timestamp: serverTimestamp() 
-                });
+                // We save the raw message data (text, sender, sources) to localStorage
+                const serializableHistory = chatHistory.map(msg => ({
+                    sender: msg.role === 'model' ? 'bot' : 'user',
+                    text: msg.parts[0].text,
+                    sources: msg.sources || []
+                }));
+                localStorage.setItem(CHAT_KEY, JSON.stringify(serializableHistory));
             } catch (e) {
-                console.error("Error adding document to Firestore: ", e);
+                console.error("Error saving chat history to localStorage: ", e);
             }
         }
-
-
+        
         /**
-         * Sets up a real-time listener for the chat history.
+         * Loads chat history from localStorage and populates the UI and chatHistory array.
          */
         function loadChatHistory() {
-            const { db, appId } = window.firebaseApp;
-            const userId = window.firebaseApp.auth?.currentUser?.uid;
-
-            if (!db || !userId) return;
+            const savedHistoryJson = localStorage.getItem(CHAT_KEY);
+            let savedHistory = [];
             
-            const path = `artifacts/${appId}/users/${userId}/${CHAT_COLLECTION}`;
-            // Use orderBy to ensure messages are loaded in chronological order
-            const q = query(collection(db, path), orderBy('timestamp', 'asc')); 
-
-            onSnapshot(q, (snapshot) => {
-                // Clear current messages and chatHistory to rebuild the entire state
-                messagesContainer.innerHTML = '';
-                chatHistory = []; 
-
-                snapshot.forEach((doc) => {
-                    const data = doc.data();
-                    
-                    // Rebuild the UI (passing 3 arguments: text, sender, sources)
-                    displayMessage(data.text || '', data.sender, data.sources);
-                    
-                    // Rebuild the Gemini Chat History for API context
-                    if (data.text) {
-                        if (data.sender === 'bot') {
-                            chatHistory.push({ role: "model", parts: [{ text: data.text }] });
-                        } else if (data.sender === 'user') {
-                            chatHistory.push({ role: "user", parts: [{ text: data.text }] });
-                        }
-                    }
-                });
-                
-                // CRITICAL: Re-adding the welcome message logic here.
-                if (snapshot.empty) {
-                     const welcomeText = "Welcome, student. Before we commence our rigorous lesson on scientific misconceptions, please state your name.";
-                     // Save the initial bot message to Firestore (onSnapshot will then display it)
-                     saveMessage('bot', welcomeText);
+            if (savedHistoryJson) {
+                try {
+                    savedHistory = JSON.parse(savedHistoryJson);
+                } catch (e) {
+                    console.error("Error parsing chat history from localStorage:", e);
+                    localStorage.removeItem(CHAT_KEY); // Clear corrupted data
                 }
+            }
 
-            }, (error) => {
-                console.error("Firestore snapshot error:", error);
-                displayMessage("A disturbance in the magic prevented us from loading your previous lessons.", 'bot');
+            messagesContainer.innerHTML = '';
+            chatHistory = []; 
+
+            if (savedHistory.length === 0) {
+                 const welcomeText = "Welcome, student. Before we commence our rigorous lesson on scientific misconceptions, please state your name.";
+                 // Add the initial bot message to history and UI
+                 chatHistory.push({ role: "model", parts: [{ text: welcomeText }] });
+                 displayMessage(welcomeText, 'bot');
+                 saveHistory();
+                 return;
+            }
+
+            // Rebuild the UI and Gemini Chat History
+            savedHistory.forEach(data => {
+                displayMessage(data.text, data.sender, data.sources);
+                
+                if (data.text) {
+                    const role = data.sender === 'bot' ? 'model' : 'user';
+                    chatHistory.push({ role: role, parts: [{ text: data.text }] });
+                }
             });
         }
 
@@ -349,25 +255,36 @@
          */
         window.sendMessage = async function() {
             const query = userInput.value.trim();
-            if (!query || !window.firebaseApp.auth?.currentUser?.uid) return;
+            if (!query) return;
 
-            // 1. Save user message to Firestore (onSnapshot will handle displaying it)
-            await saveMessage('user', query);
+            // 1. Add user message to in-memory history
+            chatHistory.push({ role: "user", parts: [{ text: query }] });
             
-            // 2. Clear input and start loading
+            // 2. Display user message immediately and save history
+            displayMessage(query, 'user');
+            saveHistory(); 
+
+            // 3. Clear input and start loading
             userInput.value = '';
             setLoading(true);
             
-            // 3. Construct API Payload
+            // 4. Construct API Payload
             const payload = {
-                contents: chatHistory, // Use history rebuilt by the listener
+                contents: chatHistory,
                 tools: [{ "google_search": {} }], 
                 systemInstruction: {
                     parts: [{ text: "You are Professor Minerva McGonagal, a stern but fair professor from Hogwarts, with a special interest in teaching students the correct understanding of science. Your task is to act as a rigorous tutor on scientific misconceptions.\n\n**Protocol:**\n1. Use formal, professorial language, like a professor from Hogwarts.\n2. Do NOT provide the correct explanation yourself. Your purpose is to guide. Instead, guide the student with follow-up questions to help them reach the correct answer.\n3. Keep the conversation focused on a single scientific misconception until the student has provided a sufficiently accurate and complete explanation. Do not do the student's work for them." }]
                 }
             };
             
+            let botResponseText = "The Magic was too weak. Professor McGonagall couldn't formulate a response. Try again.";
+            let sources = [];
+
             try {
+                if (!API_KEY) {
+                     throw new Error("API Key is missing. Please insert your key into the code.");
+                }
+                
                 const response = await withRetry(async () => {
                     const res = await fetch(TEXT_API_URL, {
                         method: 'POST',
@@ -383,12 +300,12 @@
                 });
 
                 const candidate = response.candidates?.[0];
-                let botResponseText = candidate?.content?.parts?.[0]?.text;
+                const generatedText = candidate?.content?.parts?.[0]?.text;
                 
-                if (botResponseText) {
+                if (generatedText) {
+                    botResponseText = generatedText;
                     
-                    // 4. Extract Grounding Sources
-                    let sources = [];
+                    // Extract Grounding Sources
                     const groundingMetadata = candidate.groundingMetadata;
                     if (groundingMetadata && groundingMetadata.groundingAttributions) {
                         sources = groundingMetadata.groundingAttributions
@@ -398,23 +315,23 @@
                             }))
                             .filter(source => source.uri && source.title);
                     }
-
-                    // 5. Save bot text response to Firestore
-                    await saveMessage('bot', botResponseText, sources); 
-
-                } else {
-                    await saveMessage('bot', "The Magic was too weak. Professor McGonagall couldn't formulate a response. Try again.", []);
                 }
 
             } catch (error) {
-                const errorMessage = "A critical network error occurred. Professor McGonagall is currently unable to receive owl post. (Hint: Ensure you have inserted a valid API key and are running the file from a web server.)";
-                await saveMessage('bot', errorMessage, []);
+                botResponseText = `A critical error occurred: ${error.message}`;
                 console.error("Gemini API call failed:", error);
             } finally {
-                setLoading(false); // Stop loading after all steps are complete
+                // 5. Add bot response to history and display
+                chatHistory.push({ role: "model", parts: [{ text: botResponseText }], sources: sources });
+                displayMessage(botResponseText, 'bot', sources); 
+                saveHistory(); // Save updated history
+                setLoading(false); // Stop loading 
             }
         };
 
+        // Initialize chat on load
+        loadChatHistory();
+        
         // Expose function to global scope for HTML inline access
         window.sendMessage = sendMessage;
     </script>
