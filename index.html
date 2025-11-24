@@ -1,106 +1,707 @@
 <!DOCTYPE html>
+
 <html lang="en">
+
 <head>
+
     <meta charset="UTF-8">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Professor McGonagall</title>
+
+    <title>Gemini Chat Bot</title>
+
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f7fafc; }
-        .chat-area { max-height: calc(100vh - 12rem); overflow-y: auto; }
-        .user-message { background-color: #3b82f6; color: white; border-radius: 12px 12px 0 12px; }
-        .model-message { background-color: #e5e7eb; color: #1f2937; border-radius: 12px 12px 12px 0; }
+
+        body {
+
+            font-family: 'Inter', sans-serif;
+
+            background-color: #f7f9fb;
+
+        }
+
+        .chat-container {
+
+            max-height: 80vh;
+
+            overflow-y: auto;
+
+            scroll-behavior: smooth;
+
+        }
+
+        .bot-message {
+
+            background-color: #e0f2fe; /* Light Blue */
+
+            color: #0c4a6e;
+
+        }
+
+        .user-message {
+
+            background-color: #d1fae5; /* Light Green */
+
+            color: #065f46;
+
+        }
+
+        .source-link {
+
+            color: #1d4ed8;
+
+            text-decoration: underline;
+
+            font-size: 0.8rem;
+
+            margin-top: 0.5rem;
+
+            display: block;
+
+        }
+
+        .source-container {
+
+            border-top: 1px solid #bae6fd;
+
+            padding-top: 0.5rem;
+
+            margin-top: 0.5rem;
+
+        }
+
+        /* Custom scrollbar for aesthetics */
+
+        .chat-container::-webkit-scrollbar {
+
+            width: 8px;
+
+        }
+
+        .chat-container::-webkit-scrollbar-track {
+
+            background: #f1f1f1;
+
+            border-radius: 4px;
+
+        }
+
+        .chat-container::-webkit-scrollbar-thumb {
+
+            background: #cbd5e1;
+
+            border-radius: 4px;
+
+        }
+
+        .chat-container::-webkit-scrollbar-thumb:hover {
+
+            background: #94a3b8;
+
+        }
+
+        .message-image {
+
+            max-width: 100%;
+
+            height: auto;
+
+            border-radius: 8px;
+
+            margin-top: 10px;
+
+        }
+
     </style>
-</head>
-<body class="min-h-screen flex flex-col items-center p-4 bg-gray-100">
 
-    <div class="w-full max-w-2xl bg-white shadow-xl rounded-xl flex flex-col h-[90vh]">
-        <header class="p-4 bg-indigo-600 text-white rounded-t-xl shadow-md">
-            <h1 class="text-2xl font-bold">🔬 Professor McGonagall</h1>
-        </header>
+    <!-- Firebase Imports for Authentication (Required structure, even if not fully used for this bot) --><script type="module">
 
-        <main id="chat-area" class="chat-area flex-grow p-4 space-y-4">
-            <div class="text-center text-gray-400 mt-10">
-                <p>Class is in session.</p>
-                <p>Say "Hello" to begin.</p>
-            </div>
-        </main>
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 
-        <footer class="p-4 border-t border-gray-200 bg-white rounded-b-xl">
-            <form id="chat-form" class="flex gap-2">
-                <input type="text" id="user-input" placeholder="Type here..." class="flex-grow p-3 border border-gray-300 rounded-lg">
-                <button type="submit" class="bg-indigo-600 text-white p-3 rounded-lg">Send</button>
-            </form>
-            <p id="error-msg" class="text-red-500 text-sm mt-2 hidden"></p>
-        </footer>
-    </div>
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-    <script>
-        // --- PASTE YOUR KEY BELOW ---
-        const API_KEY = AIzaSyDR_t83e7OgsH96SYqxa-vDRMVEiwoG1jo; 
-        // ---------------------------
+        import { getFirestore, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const chatArea = document.getElementById('chat-area');
-        const userInput = document.getElementById('user-input');
-        const form = document.getElementById('chat-form');
-        const errorMsg = document.getElementById('error-msg');
-        
-        let conversationHistory = [];
 
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const text = userInput.value.trim();
-            if (!text) return;
 
-            // 1. Add User Message
-            addMessage('user', text);
-            userInput.value = '';
-            
-            // 2. Prepare History for API
-            // Note: Gemini API expects "user" and "model" roles
-            const contents = conversationHistory.map(msg => ({
-                role: msg.role,
-                parts: [{ text: msg.text }]
-            }));
-            contents.push({ role: 'user', parts: [{ text: text }] });
+        // Global variables provided by the environment
 
-            // 3. Call API
-            try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: contents,
-                        systemInstruction: {
-                            parts: [{ text: "You are Professor Minerva McGonagall. Stern, precise, fair. Goal: Biology Professor debunking misconceptions. Protocol: 1. Greet & ask name. 2. Select ONE misconception & ask student to explain. 3. If wrong, Socratic probing questions only. 4. If right, confirm & move to next." }]
-                        }
-                    })
-                });
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-                const data = await response.json();
-                
-                if (data.error) {
-                    throw new Error(data.error.message);
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+
+
+        let db, auth;
+
+
+
+        if (Object.keys(firebaseConfig).length > 0) {
+
+            const app = initializeApp(firebaseConfig);
+
+            db = getFirestore(app);
+
+            auth = getAuth(app);
+
+            // setLogLevel('Debug'); // Uncomment for debugging
+
+        }
+
+
+
+        window.firebaseApp = {
+
+            db: db,
+
+            auth: auth,
+
+            appId: appId,
+
+            initialAuthToken: initialAuthToken
+
+        };
+
+
+
+        // Handle Authentication
+
+        if (auth) {
+
+            onAuthStateChanged(auth, (user) => {
+
+                if (!user) {
+
+                    // Sign in if not authenticated
+
+                    const signIn = initialAuthToken 
+
+                        ? signInWithCustomToken(auth, initialAuthToken)
+
+                        : signInAnonymously(auth);
+
+                    
+
+                    signIn.catch(error => console.error("Firebase Sign-in Failed:", error));
+
                 }
 
-                const reply = data.candidates[0].content.parts[0].text;
-                addMessage('model', reply);
+            });
+
+        }
+
+    </script>
+
+</head>
+
+<body class="p-4 flex items-center justify-center min-h-screen">
+
+    <div id="chat-widget" class="w-full max-w-2xl bg-white shadow-xl rounded-2xl p-6 flex flex-col h-[90vh]">
+
+        
+
+        <!-- Header --><header class="pb-4 border-b border-gray-200">
+
+            <h1 class="text-3xl font-bold text-gray-800 flex items-center">
+
+                <svg class="w-7 h-7 mr-2 text-purple-600" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.303L10 17.636l6.619 1.317a1 1 0 001.169-1.303l-7-14z"></path></svg>
+
+                Professor McGonagall's Science Class
+
+            </h1>
+
+            <p class="text-sm text-gray-500 mt-1">Dispelling fallacies with academic rigor. Pay close attention, student.</p>
+
+        </header>
+
+
+
+        <!-- Chat Display Area --><div id="messages" class="chat-container flex-grow py-4 space-y-4">
+
+            <!-- Initial welcome message --><div class="flex justify-start">
+
+                <div class="bot-message max-w-xs md:max-w-md p-3 rounded-xl rounded-tl-none shadow-md">
+
+                    Welcome, student. Before we commence our rigorous lesson on scientific misconceptions, please state your name.
+
+                </div>
+
+            </div>
+
+            <!-- Messages will be injected here --></div>
+
+
+
+        <!-- Input Area --><div class="pt-4 border-t border-gray-200">
+
+            <div class="flex space-x-3">
+
+                <input type="text" id="user-input" placeholder="Type your name or query here..."
+
+                       class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150"
+
+                       onkeydown="if(event.key === 'Enter') sendMessage()">
+
+                <button id="send-button" onclick="sendMessage()"
+
+                        class="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition duration-150 flex items-center justify-center disabled:bg-indigo-400">
+
+                    <span id="send-text">Send</span>
+
+                    <svg id="loading-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+
+                    </svg>
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    <script type="module">
+
+        const userInput = document.getElementById('user-input');
+
+        const messagesContainer = document.getElementById('messages');
+
+        const sendButton = document.getElementById('send-button');
+
+        const sendText = document.getElementById('send-text');
+
+        const loadingSpinner = document.getElementById('loading-spinner');
+
+
+
+        // Global variable for API key. 
+
+        const API_KEY = ""; 
+
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
+
+        
+
+        let chatHistory = [];
+
+
+
+        /**
+
+         * Utility function for exponential backoff retry logic.
+
+         * @param {function} fn - The function to execute.
+
+         * @param {number} maxRetries - The maximum number of retries.
+
+         */
+
+        async function withRetry(fn, maxRetries = 5) {
+
+            for (let i = 0; i < maxRetries; i++) {
+
+                try {
+
+                    return await fn();
+
+                } catch (error) {
+
+                    if (i === maxRetries - 1) {
+
+                        console.error("Max retries reached. Failing.");
+
+                        throw error;
+
+                    }
+
+                    // Wait for 2^i seconds
+
+                    const delay = Math.pow(2, i) * 1000;
+
+                    await new Promise(resolve => setTimeout(resolve, delay));
+
+                }
+
+            }
+
+        }
+
+
+
+        /**
+
+         * Adds a message bubble to the chat interface.
+
+         * @param {string} text - The message content.
+
+         * @param {string} sender - 'user' or 'bot'.
+
+         * @param {Array<Object>} [sources=[]] - Optional array of grounding sources.
+
+         * @param {string} [imageUrl=null] - Optional URL for an image to display.
+
+         */
+
+        function displayMessage(text, sender, sources = [], imageUrl = null) {
+
+            const messageWrapper = document.createElement('div');
+
+            messageWrapper.className = `flex ${sender === 'user' ? 'justify-end' : 'justify-start'}`;
+
+
+
+            const messageBubble = document.createElement('div');
+
+            messageBubble.className = `${sender}-message max-w-xs md:max-w-md p-3 rounded-xl shadow-md whitespace-pre-wrap`;
+
+            
+
+            // Adjust corner rounding based on sender
+
+            if (sender === 'user') {
+
+                messageBubble.classList.add('rounded-tr-none');
+
+            } else {
+
+                messageBubble.classList.add('rounded-tl-none');
+
+            }
+
+
+
+            // Replace Markdown bold/italics for basic styling if needed
+
+            let formattedText = text
+
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+
+                .replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+            
+
+            messageBubble.innerHTML = formattedText;
+
+
+
+            // Add image if provided
+
+            if (imageUrl) {
+
+                const img = document.createElement('img');
+
+                img.src = imageUrl;
+
+                img.alt = "Illustration for the topic";
+
+                img.className = "message-image";
+
+                messageBubble.appendChild(img);
+
+            }
+
+
+
+            // Add sources if available and sender is 'bot'
+
+            if (sender === 'bot' && sources.length > 0) {
+
+                const sourceContainer = document.createElement('div');
+
+                sourceContainer.className = 'source-container mt-2 pt-2 border-t border-blue-200 text-xs text-gray-600';
+
+                sourceContainer.innerHTML = '<strong>Sources:</strong>';
+
+                
+
+                const uniqueSources = new Map();
+
+                sources.forEach(source => {
+
+                    if (source.uri && source.title) {
+
+                        uniqueSources.set(source.uri, source.title);
+
+                    }
+
+                });
+
+
+
+                uniqueSources.forEach((title, uri) => {
+
+                    const link = document.createElement('a');
+
+                    link.className = 'source-link block truncate hover:text-blue-700';
+
+                    link.href = uri;
+
+                    link.target = '_blank';
+
+                    link.textContent = title;
+
+                    sourceContainer.appendChild(link);
+
+                });
+
+                
+
+                messageBubble.appendChild(sourceContainer);
+
+            }
+
+
+
+            messageWrapper.appendChild(messageBubble);
+
+            messagesContainer.appendChild(messageWrapper);
+
+
+
+            // Scroll to the latest message
+
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        }
+
+        
+
+        /**
+
+         * Toggles the loading state for the button and input field.
+
+         * @param {boolean} isLoading - True to set loading state, false otherwise.
+
+         */
+
+        function setLoading(isLoading) {
+
+            sendButton.disabled = isLoading;
+
+            userInput.disabled = isLoading;
+
+            if (isLoading) {
+
+                sendText.classList.add('hidden');
+
+                loadingSpinner.classList.remove('hidden');
+
+            } else {
+
+                sendText.classList.remove('hidden');
+
+                loadingSpinner.classList.add('hidden');
+
+            }
+
+        }
+
+
+
+        /**
+
+         * Handles sending the user message to the Gemini API.
+
+         */
+
+        window.sendMessage = async function() {
+
+            const query = userInput.value.trim();
+
+            if (!query) return;
+
+
+
+            // 1. Display user message
+
+            displayMessage(query, 'user');
+
+            
+
+            // 2. Add user message to history and clear input
+
+            chatHistory.push({ role: "user", parts: [{ text: query }] });
+
+            userInput.value = '';
+
+            setLoading(true);
+
+            
+
+            // 3. Construct API Payload
+
+            const payload = {
+
+                contents: chatHistory,
+
+                // Enable Google Search grounding for up-to-date and reliable answers
+
+                tools: [{ "google_search": {} }], 
+
+                systemInstruction: {
+
+                    parts: [{ text: "You are Professor Minerva McGonagal, a stern but fair professor from Hogwarts, with a special interest in teaching students the correct understanding of science. Your task is to act as a rigorous tutor on scientific misconceptions.\n\n**Protocol:**\n1. If the student has not provided a name, immediately ask them for their name.\n2. Once the name is provided, select a common scientific misconception (e.g., 'cracking knuckles causes arthritis', 'sugar makes kids hyperactive', 'seasons are caused by Earth's distance from the sun', etc.) and ask the student to explain why it is a misconception and what the correct scientific understanding is.\n3. Use formal, professorial language, like a professor from Hogwarts.\n4. Do NOT provide the correct explanation yourself. Your purpose is to guide. Instead, guide the student with follow-up questions to help them reach the correct answer.\n5. Only proceed to a new topic or end the lesson once the student has provided a sufficiently accurate and complete explanation of the misconception. Do not do the student's work for them.\n6. **Always include a cute, relevant image with your responses to make the lesson more engaging.**" }]
+
+                }
+
+            };
+
+            
+
+            try {
+
+                const response = await withRetry(async () => {
+
+                    const res = await fetch(API_URL, {
+
+                        method: 'POST',
+
+                        headers: { 'Content-Type': 'application/json' },
+
+                        body: JSON.stringify(payload)
+
+                    });
+
+
+
+                    if (!res.ok) {
+
+                        const errorBody = await res.text();
+
+                        throw new Error(`API request failed with status ${res.status}: ${errorBody}`);
+
+                    }
+
+                    return res.json();
+
+                });
+
+
+
+                const candidate = response.candidates?.[0];
+
+                const botResponseText = candidate?.content?.parts?.[0]?.text;
+
+                
+
+                if (botResponseText) {
+
+                    // 4. Extract Grounding Sources
+
+                    let sources = [];
+
+                    const groundingMetadata = candidate.groundingMetadata;
+
+                    if (groundingMetadata && groundingMetadata.groundingAttributions) {
+
+                        sources = groundingMetadata.groundingAttributions
+
+                            .map(attribution => ({
+
+                                uri: attribution.web?.uri,
+
+                                title: attribution.web?.title,
+
+                            }))
+
+                            .filter(source => source.uri && source.title);
+
+                    }
+
+
+
+                    // 5. Display bot response
+
+                    displayMessage(botResponseText, 'bot', sources);
+
+
+
+                    // 6. Add bot response to history for context
+
+                    chatHistory.push({ role: "model", parts: [{ text: botResponseText }] });
+
+
+
+                    // Proactively generate a cute image here!
+
+                    // This is where the magic happens to add images to the conversation flow.
+
+                    if (botResponseText.includes("Welcome, student")) {
+
+                         // Initial welcome image
+
+                        displayMessage("", "bot", [], 'https://via.placeholder.com/200/90EE90/FFFFFF?text=Cute+Welcome'); 
+
+                    } else if (botResponseText.includes("name") || botResponseText.includes("misconception")) {
+
+                        // Image for asking name or introducing a misconception
+
+                        displayMessage("", "bot", [], 'https://via.placeholder.com/200/ADD8E6/FFFFFF?text=Curious+Owl');
+
+                    } else {
+
+                        // Default image for general responses, can be made context-aware later
+
+                        displayMessage("", "bot", [], 'https://via.placeholder.com/200/FFD700/FFFFFF?text=Smart+Cat');
+
+                    }
+
+                    
+
+
+
+                } else {
+
+                    displayMessage("Sorry, I couldn't generate a response. Please try again.", 'bot');
+
+                    console.error("API response was empty or malformed:", response);
+
+                    // Remove the user message from history if no valid response was received
+
+                    chatHistory.pop(); 
+
+                }
+
+
 
             } catch (error) {
-                errorMsg.textContent = "Error: " + error.message;
-                errorMsg.classList.remove('hidden');
-            }
-        });
 
-        function addMessage(role, text) {
-            conversationHistory.push({ role, text });
-            
-            const div = document.createElement('div');
-            div.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
-            div.innerHTML = `<div class="max-w-[80%] p-3 shadow-md ${role === 'user' ? 'user-message' : 'model-message'}">${text.replace(/\n/g, '<br>')}</div>`;
-            chatArea.appendChild(div);
-            chatArea.scrollTop = chatArea.scrollHeight;
-        }
+                displayMessage("An error occurred while connecting to the AI. Please check the console for details.", 'bot');
+
+                console.error("Gemini API call failed:", error);
+
+                // Remove the user message from history on error
+
+                chatHistory.pop();
+
+            } finally {
+
+                setLoading(false);
+
+            }
+
+        };
+
+
+
+        // Expose function to global scope for HTML inline access
+
+        window.sendMessage = sendMessage;
+
     </script>
+
 </body>
+
 </html>
