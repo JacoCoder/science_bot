@@ -51,12 +51,6 @@
         .chat-container::-webkit-scrollbar-thumb:hover {
             background: #94a3b8;
         }
-        .message-image {
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-            margin-top: 10px;
-        }
     </style>
     <!-- Firebase Imports for Authentication and Persistence -->
     <script type="module">
@@ -137,7 +131,7 @@
         <!-- Input Area -->
         <div class="pt-4 border-t border-gray-200">
             <div class="flex space-x-3">
-                <input type="text" id="user-input" placeholder="Type your name or query here..."
+                <input type="text" id="user-input" placeholder="Type your query here..."
                        class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150"
                        onkeydown="if(event.key === 'Enter') sendMessage()">
                 <button id="send-button" onclick="sendMessage()" disabled
@@ -164,9 +158,8 @@
 
         // --- API & Model Configuration ---
         // !!! IMPORTANT: The API_KEY must be inserted here for external hosting. !!!
-        const API_KEY = "AIzaSyB0VYddwvfQtAKVeD2zyk7PzVYvALMLiVg"; 
+        const API_KEY = ""; 
         const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
-        const IMAGE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${API_KEY}`;
         
         let chatHistory = [];
         const CHAT_COLLECTION = "chat_messages";
@@ -201,7 +194,7 @@
         /**
          * Adds a message bubble to the chat interface. (Used by onSnapshot)
          */
-        function displayMessage(text, sender, sources = [], imageUrl = null) {
+        function displayMessage(text, sender, sources = []) {
             const messageWrapper = document.createElement('div');
             messageWrapper.className = `flex ${sender === 'user' ? 'justify-end' : 'justify-start'}`;
 
@@ -220,32 +213,6 @@
             
             messageBubble.innerHTML = formattedText;
 
-            // Add image if provided
-            if (imageUrl) {
-                const img = document.createElement('img');
-                img.src = imageUrl;
-                img.alt = "Illustration for the topic";
-                img.className = "message-image";
-                
-                // If the message is only an image, clear the text content
-                if (!text.trim()) {
-                    messageBubble.innerHTML = '';
-                    // If the imageUrl is a placeholder text, display it below the image
-                    if (imageUrl.includes("via.placeholder.com") && imageUrl.includes("?text=")) {
-                        const textMatch = imageUrl.match(/\?text=(.*)/);
-                        if (textMatch && textMatch[1]) {
-                             // Use bold red text for error messages
-                             const altText = decodeURIComponent(textMatch[1]).replace(/\+/g, ' ');
-                             const caption = document.createElement('p');
-                             caption.className = "text-xs font-bold text-red-700 mt-2";
-                             caption.textContent = `[FAILURE: ${altText}]`;
-                             messageBubble.appendChild(caption);
-                        }
-                    }
-                }
-
-                messageBubble.appendChild(img);
-            }
             
             // Add sources if available
             if (sources && sources.length > 0) {
@@ -283,8 +250,6 @@
          * Toggles the loading state for the button and input field.
          */
         function setLoading(isLoading) {
-            // Note: We don't disable the button completely here anymore, 
-            // as we want to allow text messages while an image is generating.
             if (isLoading) {
                 sendText.classList.add('hidden');
                 loadingSpinner.classList.remove('hidden');
@@ -297,7 +262,7 @@
         /**
          * Saves a message (user or bot) to Firestore.
          */
-        async function saveMessage(sender, text, sources = null, imageUrl = null) {
+        async function saveMessage(sender, text, sources = null) {
             const { db, appId } = window.firebaseApp;
             const userId = window.firebaseApp.auth?.currentUser?.uid;
 
@@ -311,7 +276,6 @@
                     sender: sender,
                     text: text,
                     sources: sources,
-                    imageUrl: imageUrl,
                     timestamp: serverTimestamp() 
                 });
             } catch (e) {
@@ -319,47 +283,6 @@
             }
         }
 
-        /**
-         * Generates an image using the Imagen API and returns a data URL or an error placeholder URL.
-         */
-        async function generateImage(prompt) {
-            const imagePayload = { 
-                instances: [{ prompt: prompt }], 
-                parameters: { "sampleCount": 1 } 
-            };
-
-            try {
-                const response = await withRetry(async () => {
-                    const res = await fetch(IMAGE_API_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(imagePayload)
-                    });
-
-                    if (!res.ok) {
-                        const errorBody = await res.text();
-                        // This indicates a 4xx or 5xx error from the API (e.g., Invalid API Key/Model not found)
-                        throw new Error(`Image API request failed with status ${res.status}: ${errorBody}`);
-                    }
-                    return res.json();
-                });
-
-                const base64Data = response?.predictions?.[0]?.bytesBase64Encoded;
-                
-                if (base64Data) {
-                    return `data:image/png;base64,${base64Data}`;
-                }
-
-                console.error("Image generation failed: No base64 data received.");
-                // Diagnostic placeholder for missing base64 data
-                return `https://via.placeholder.com/300/F44336/FFFFFF?text=IMAGE+ERROR%3A+No+Data+Received`;
-
-            } catch (error) {
-                console.error("Image generation API call failed:", error);
-                // Diagnostic placeholder for network or API Key failure
-                return `https://via.placeholder.com/300/F44336/FFFFFF?text=IMAGE+ERROR%3A+API+Call+Failed`;
-            }
-        }
 
         /**
          * Sets up a real-time listener for the chat history.
@@ -378,15 +301,14 @@
                 // Clear current messages and chatHistory to rebuild the entire state
                 messagesContainer.innerHTML = '';
                 chatHistory = []; 
-                let initialBotMessageFound = false;
 
                 snapshot.forEach((doc) => {
                     const data = doc.data();
                     
-                    // Rebuild the UI using the data from Firestore
-                    displayMessage(data.text || '', data.sender, data.sources, data.imageUrl);
+                    // Rebuild the UI (passing 3 arguments: text, sender, sources)
+                    displayMessage(data.text || '', data.sender, data.sources);
                     
-                    // Rebuild the Gemini Chat History for API context (only use text, ignore images for chat context)
+                    // Rebuild the Gemini Chat History for API context
                     if (data.text) {
                         if (data.sender === 'bot') {
                             chatHistory.push({ role: "model", parts: [{ text: data.text }] });
@@ -394,17 +316,13 @@
                             chatHistory.push({ role: "user", parts: [{ text: data.text }] });
                         }
                     }
-                    
-                    if (data.text && data.text.includes("Welcome, student. Before we commence our rigorous lesson")) {
-                        initialBotMessageFound = true;
-                    }
                 });
                 
-                // If this is the first time loading the chat, add the initial bot message to Firestore
-                if (snapshot.empty || !initialBotMessageFound) {
+                // CRITICAL: Re-adding the welcome message logic here.
+                if (snapshot.empty) {
                      const welcomeText = "Welcome, student. Before we commence our rigorous lesson on scientific misconceptions, please state your name.";
-                     // Using a fixed welcome placeholder to avoid running the expensive generator on initial load
-                     saveMessage('bot', welcomeText, [], 'https://via.placeholder.com/200/90EE90/FFFFFF?text=Cute+Welcome+Owl');
+                     // Save the initial bot message to Firestore (onSnapshot will then display it)
+                     saveMessage('bot', welcomeText);
                 }
 
             }, (error) => {
@@ -433,12 +351,10 @@
                 contents: chatHistory, // Use history rebuilt by the listener
                 tools: [{ "google_search": {} }], 
                 systemInstruction: {
-                    parts: [{ text: "You are Professor Minerva McGonagal, a stern but fair professor from Hogwarts, with a special interest in teaching students the correct understanding of science. Your task is to act as a rigorous tutor on scientific misconceptions.\n\n**Protocol:**\n1. If the student has not provided a name, immediately ask them for their name.\n2. Once the name is provided, select a common scientific misconception (e.g., 'cracking knuckles causes arthritis', 'sugar makes kids hyperactive', 'seasons are caused by Earth's distance from the sun', etc.) and ask the student to explain why it is a misconception and what the correct scientific understanding is.\n3. Use formal, professorial language, like a professor from Hogwarts.\n4. Do NOT provide the correct explanation yourself. Your purpose is to guide. Instead, guide the student with follow-up questions to help them reach the correct answer.\n5. Only proceed to a new topic or end the lesson once the student has provided a sufficiently accurate and complete explanation of the misconception. Do not do the student's work for them.\n6. **Always include a cute, relevant image prompt at the end of your response text, separated by a newline, in the exact format: 'Cute image: [Your prompt here].' to trigger the image generation logic below.**" }]
+                    parts: [{ text: "You are Professor Minerva McGonagal, a stern but fair professor from Hogwarts, with a special interest in teaching students the correct understanding of science. Your task is to act as a rigorous tutor on scientific misconceptions.\n\n**Protocol:**\n1. Use formal, professorial language, like a professor from Hogwarts.\n2. Do NOT provide the correct explanation yourself. Your purpose is to guide. Instead, guide the student with follow-up questions to help them reach the correct answer.\n3. Keep the conversation focused on a single scientific misconception until the student has provided a sufficiently accurate and complete explanation. Do not do the student's work for them." }]
                 }
             };
             
-            let finalImagePrompt = null;
-
             try {
                 const response = await withRetry(async () => {
                     const res = await fetch(TEXT_API_URL, {
@@ -471,36 +387,15 @@
                             .filter(source => source.uri && source.title);
                     }
 
-                    // 5. Extract Image Prompt and clean up text
-                    const imagePromptMatch = botResponseText.match(/Cute image:\s*(.*)/i);
-                    if (imagePromptMatch) {
-                        finalImagePrompt = imagePromptMatch[1].trim();
-                        // Remove the image prompt line from the text response
-                        botResponseText = botResponseText.replace(imagePromptMatch[0], '').trim();
-                    }
-
-                    // 6. Save bot text response to Firestore (no image URL in this document)
-                    await saveMessage('bot', botResponseText, sources, null); 
-
-                    // 7. If an image prompt was found, generate the image and save it as a separate document
-                    if (finalImagePrompt) {
-                        // The spinner is already active from step 2, indicating ongoing work
-                        const imageUrl = await generateImage(finalImagePrompt);
-                        
-                        if (imageUrl) {
-                            // Save the generated image as a separate message (no text, just image URL)
-                            // The text field saves the prompt for reference
-                            await saveMessage('bot', `Image generated from prompt: "${finalImagePrompt}"`, null, imageUrl);
-                        }
-                    }
+                    // 5. Save bot text response to Firestore
+                    await saveMessage('bot', botResponseText, sources); 
 
                 } else {
                     await saveMessage('bot', "The Magic was too weak. Professor McGonagall couldn't formulate a response. Try again.", []);
                 }
 
             } catch (error) {
-                // This block is crucial for fixing the infinite spinner in CORS scenarios
-                const errorMessage = "A critical network error occurred. Please check the browser console for CORS errors. Professor McGonagall is currently unable to receive owl post. (Hint: Ensure you have inserted a valid API key and are running the file from a web server.)";
+                const errorMessage = "A critical network error occurred. Professor McGonagall is currently unable to receive owl post. (Hint: Ensure you have inserted a valid API key and are running the file from a web server.)";
                 await saveMessage('bot', errorMessage, []);
                 console.error("Gemini API call failed:", error);
             } finally {
