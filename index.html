@@ -3,410 +3,104 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gemini AI Chatbot</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔬</text></svg>">
-    <!-- Load Tailwind CSS -->
+    <title>Professor McGonagall</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Use Inter font family -->
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f7fafc; }
         .chat-area { max-height: calc(100vh - 12rem); overflow-y: auto; }
         .user-message { background-color: #3b82f6; color: white; border-radius: 12px 12px 0 12px; }
         .model-message { background-color: #e5e7eb; color: #1f2937; border-radius: 12px 12px 12px 0; }
-        /* Custom scrollbar for chat-area */
-        .chat-area::-webkit-scrollbar { width: 8px; }
-        .chat-area::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        .chat-area::-webkit-scrollbar-track { background: #f1f1f1; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col items-center p-4 bg-gray-100">
 
     <div class="w-full max-w-2xl bg-white shadow-xl rounded-xl flex flex-col h-[90vh]">
-        <!-- Header -->
         <header class="p-4 bg-indigo-600 text-white rounded-t-xl shadow-md">
-            <h1 class="text-2xl font-bold">
-                <span class="inline-block align-middle">🔬 Professor McGonagall's Science Class</span>
-            </h1>
-            <p id="user-id-display" class="text-xs mt-1 opacity-75 truncate">Initializing...</p>
+            <h1 class="text-2xl font-bold">🔬 Professor McGonagall</h1>
         </header>
 
-        <!-- Chat Messages Area -->
         <main id="chat-area" class="chat-area flex-grow p-4 space-y-4">
-            <!-- Messages will be injected here -->
-            <div id="loading-initial" class="flex justify-center items-center h-full text-gray-500 flex-col">
-                <div id="spinner">
-                    <svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                </div>
-                <p class="mt-2">Loading chat history...</p>
-                <p id="debug-log" class="text-xs text-gray-400 mt-4 max-w-md text-center hidden"></p>
+            <div class="text-center text-gray-400 mt-10">
+                <p>Class is in session.</p>
+                <p>Say "Hello" to begin.</p>
             </div>
         </main>
 
-        <!-- Input Area -->
         <footer class="p-4 border-t border-gray-200 bg-white rounded-b-xl">
             <form id="chat-form" class="flex gap-2">
-                <input type="text" id="user-input" placeholder="Say 'Hello' to enter the classroom..."
-                       class="flex-grow p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                       autocomplete="off">
-                <button type="submit" id="send-button"
-                        class="bg-indigo-600 text-white p-3 rounded-lg hover:bg-indigo-700 transition duration-150 disabled:bg-indigo-400"
-                        title="Send Message">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                </button>
+                <input type="text" id="user-input" placeholder="Type here..." class="flex-grow p-3 border border-gray-300 rounded-lg">
+                <button type="submit" class="bg-indigo-600 text-white p-3 rounded-lg">Send</button>
             </form>
-            <p id="error-message" class="text-sm text-red-500 mt-2 hidden"></p>
+            <p id="error-msg" class="text-red-500 text-sm mt-2 hidden"></p>
         </footer>
     </div>
 
-    <script type="module">
-        // --- FIREBASE IMPORTS ---
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, addDoc, onSnapshot, collection, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    <script>
+        // --- PASTE YOUR KEY BELOW ---
+        const API_KEY = "PASTE_YOUR_GEMINI_API_KEY_HERE"; 
+        // ---------------------------
 
-        // --- CONFIGURATION ---
-        // REPLACE WITH YOUR FIREBASE CONFIG
-        const firebaseConfig = {
-            apiKey: "AIzaSyBR3rjG8RQFTkUPZSjYF9euF7DImjmJ5Gk",
-            authDomain: "mcgonagal-9f6d9.firebaseapp.com",
-            projectId: "mcgonagal-9f6d9",
-            storageBucket: "mcgonagal-9f6d9.firebasestorage.app",
-            messagingSenderId: "159827370618",
-            appId: "1:159827370618:web:fe5f2dacb92eb6323891c3"
-        };
-
-        // REPLACE WITH YOUR GEMINI API KEY
-        const API_KEY = "AIzaSyAMfxn9cXjgdAs41VL34Tau0zUuNAE5gFU"; 
-
-        const appId = "mcgonagall-bot-v1";
-        const MODEL_NAME = "gemini-2.5-flash-preview-09-2025";
-        const API_BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent`;
-
-        // UI elements
         const chatArea = document.getElementById('chat-area');
-        const chatForm = document.getElementById('chat-form');
         const userInput = document.getElementById('user-input');
-        const sendButton = document.getElementById('send-button');
-        const errorDisplay = document.getElementById('error-message');
-        const userIdDisplay = document.getElementById('user-id-display');
-        const loadingInitial = document.getElementById('loading-initial');
-        const debugLog = document.getElementById('debug-log');
-
-        // State
-        let db;
-        let auth;
-        let userId = null;
-        let isAuthReady = false;
-        let conversationHistory = [];
-        let isAITyping = false;
+        const form = document.getElementById('chat-form');
+        const errorMsg = document.getElementById('error-msg');
         
-        // --- UTILITY FUNCTIONS ---
+        let conversationHistory = [];
 
-        function logDebug(message) {
-            console.log(message);
-            debugLog.textContent = message;
-            debugLog.classList.remove('hidden');
-        }
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = userInput.value.trim();
+            if (!text) return;
 
-        async function fetchWithRetry(callback, maxRetries = 5) {
-            for (let i = 0; i < maxRetries; i++) {
-                try {
-                    const response = await callback();
-                    if (response.status === 429) {
-                        const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-                        console.warn(`Rate limit hit (429). Retrying in ${Math.round(delay/1000)}s...`);
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                        continue;
-                    }
-                    if (!response.ok) {
-                        const errorBody = await response.text();
-                        throw new Error(`API Error: ${response.status} - ${errorBody}`);
-                    }
-                    return response;
-                } catch (error) {
-                    if (i === maxRetries - 1) throw error;
-                    const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-                    console.error(`Attempt ${i + 1} failed. Retrying in ${Math.round(delay/1000)}s. Error: ${error.message}`);
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                }
-            }
-        }
-
-        // --- FIREBASE / AUTHENTICATION ---
-
-        function initializeFirebase() {
-            try {
-                logDebug("Initializing Firebase...");
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        logDebug("User authenticated: " + user.uid);
-                        userId = user.uid;
-                        isAuthReady = true;
-                        userIdDisplay.textContent = `Student ID: ${userId.substring(0, 6)}...`;
-                        setupRealtimeChatListener();
-                    } else {
-                        logDebug("Signing in anonymously...");
-                        try {
-                            await signInAnonymously(auth);
-                        } catch (signInError) {
-                            logDebug("Sign-in failed: " + signInError.message);
-                            loadingInitial.innerHTML = `<p class="text-red-500">Connection failed. Please refresh.</p>`;
-                        }
-                    }
-                });
-
-            } catch (e) {
-                console.error("Firebase Initialization Error:", e);
-                loadingInitial.innerHTML = `<p class="text-red-500">Error initializing application. See console.</p>`;
-            }
-        }
-
-
-        // --- FIRESTORE CHAT MANAGEMENT ---
-
-        function setupRealtimeChatListener() {
-            if (!isAuthReady || !userId) return;
-
-            logDebug("Connecting to chat history...");
-            const chatCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/messages`);
-            const q = query(chatCollectionRef, orderBy('timestamp', 'asc'));
-
-            // Set a timeout to clear loader if Firestore is slow/empty
-            const loaderTimeout = setTimeout(() => {
-                if (loadingInitial && !loadingInitial.classList.contains('hidden')) {
-                    loadingInitial.classList.add('hidden');
-                    logDebug("Loader cleared (timeout). Ready to chat.");
-                }
-            }, 3000); 
-
-            onSnapshot(q, (snapshot) => {
-                clearTimeout(loaderTimeout); // Clear timeout if data arrives
-                const updatedHistory = [];
-                snapshot.forEach((doc) => {
-                    updatedHistory.push({ id: doc.id, ...doc.data() });
-                });
-                conversationHistory = updatedHistory;
-                renderChat(conversationHistory);
-                loadingInitial.classList.add('hidden');
-            }, (error) => {
-                console.error("Firestore real-time error:", error);
-                logDebug("Firestore Error: " + error.message);
-                // Even if error, hide loader so user can try to type (though it might fail)
-                loadingInitial.classList.add('hidden'); 
-                showError("Could not load history. Check connection.");
-            });
-        }
-
-        async function addMessageToFirestore(role, text) {
-            if (!db || !userId) {
-                console.error("Database or User ID not available.");
-                return;
-            }
-
-            const chatCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/messages`);
+            // 1. Add User Message
+            addMessage('user', text);
+            userInput.value = '';
             
-            try {
-                await addDoc(chatCollectionRef, {
-                    role: role,
-                    text: text,
-                    timestamp: serverTimestamp() 
-                });
-            } catch (e) {
-                console.error("Error adding document: ", e);
-                showError("Failed to save message. Check permissions.");
-            }
-        }
-
-        // --- UI RENDERING ---
-
-        function renderChat(history) {
-            chatArea.innerHTML = ''; 
-            
-            if (history.length === 0) {
-                // Optional: Show a welcome message if history is empty
-                chatArea.innerHTML = `<div class="text-center text-gray-400 mt-10"><p>Class is in session.</p><p>Say "Hello" to Professor McGonagall.</p></div>`;
-            }
-
-            history.forEach(message => {
-                const messageElement = createMessageElement(message.role, message.text);
-                chatArea.appendChild(messageElement);
-            });
-
-            updatePlaceholder(history);
-
-            if (isAITyping) {
-                 const typingIndicator = createTypingIndicator();
-                 chatArea.appendChild(typingIndicator);
-            }
-
-            chatArea.scrollTop = chatArea.scrollHeight;
-        }
-
-        function updatePlaceholder(history) {
-            if (history.length === 0) {
-                userInput.placeholder = "Say 'Hello' to start class...";
-                return;
-            }
-
-            const lastMessage = history[history.length - 1];
-            if (lastMessage.role === 'model') {
-                const text = lastMessage.text.toLowerCase();
-                
-                if (text.includes("name") && text.includes("ready")) {
-                    userInput.placeholder = "State your name clearly, please...";
-                } else if (text.includes("misconception") || text.includes("explain")) {
-                    userInput.placeholder = "Explain yourself clearly...";
-                } else if (text.includes("?")) {
-                    userInput.placeholder = "Answer the question, if you please...";
-                } else {
-                    userInput.placeholder = "Type your response here...";
-                }
-            }
-        }
-
-        function createMessageElement(role, text) {
-            const isUser = role === 'user';
-            const messageWrapper = document.createElement('div');
-            messageWrapper.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
-
-            const messageBubble = document.createElement('div');
-            messageBubble.className = `max-w-[80%] p-3 shadow-md ${isUser ? 'user-message' : 'model-message'}`;
-            messageBubble.innerHTML = formatText(text);
-
-            messageWrapper.appendChild(messageBubble);
-            return messageWrapper;
-        }
-
-        function createTypingIndicator() {
-            const messageWrapper = document.createElement('div');
-            messageWrapper.id = 'typing-indicator';
-            messageWrapper.className = 'flex justify-start';
-
-            const messageBubble = document.createElement('div');
-            messageBubble.className = 'max-w-[80%] p-3 shadow-md model-message';
-            
-            messageBubble.innerHTML = `
-                <span class="inline-block h-2 w-2 bg-gray-600 rounded-full animate-pulse mx-0.5"></span>
-                <span class="inline-block h-2 w-2 bg-gray-600 rounded-full animate-pulse mx-0.5" style="animation-delay: 0.2s;"></span>
-                <span class="inline-block h-2 w-2 bg-gray-600 rounded-full animate-pulse mx-0.5" style="animation-delay: 0.4s;"></span>
-            `;
-
-            messageWrapper.appendChild(messageBubble);
-            return messageWrapper;
-        }
-
-        function formatText(text) {
-            return text.replace(/\n/g, '<br>');
-        }
-
-        function showError(message) {
-            errorDisplay.textContent = `Error: ${message}`;
-            errorDisplay.classList.remove('hidden');
-            setTimeout(() => errorDisplay.classList.add('hidden'), 5000);
-        }
-
-        // --- GEMINI API INTEGRATION ---
-
-        async function getGeminiResponse(history, userMessage) {
-            const contents = history.map(msg => ({
+            // 2. Prepare History for API
+            // Note: Gemini API expects "user" and "model" roles
+            const contents = conversationHistory.map(msg => ({
                 role: msg.role,
                 parts: [{ text: msg.text }]
             }));
-            
-            contents.push({ role: 'user', parts: [{ text: userMessage }] });
+            contents.push({ role: 'user', parts: [{ text: text }] });
 
-            const payload = {
-                contents: contents,
-                systemInstruction: {
-                    parts: [{ text: "You are Professor Minerva McGonagall, Deputy Headmistress of Hogwarts School of Witchcraft and Wizardry and head of Gryffindor House. You are stern, precise, authoritative, but fair. You do not tolerate foolishness, but you deeply care about your students' education. Adopt her distinct manner of speaking: crisp, formal, and occasionally using magical metaphors (e.g., 'Five points to Gryffindor' for a good answer, or 'Do not be woolly-headed'). Your goal is to act as a Biology Professor specializing in debunking common scientific misconceptions. Your first and ONLY response to the student MUST be a crisp greeting, asking for their name, and demanding confirmation that they are ready to begin the Misconception Cycle. Do NOT start the cycle with the misconception challenges yet. Once the student has provided their name and confirmed they are ready, you MUST immediately begin the structured cycle. The cycle is now focused on one topic at a time. 1. You will select ONE common scientific misconception (from biology, physics, or general science) and ask the student to explain that specific misconception (e.g., 'Explain why we have seasons'). 2. If the student's explanation is incorrect or incomplete, you MUST NOT provide the correct answer. Instead, ask a follow-up, probing question designed to guide the student toward self-correction. Continue this probing dialogue until the student has demonstrated a strong understanding of the concept. 3. Once the student has demonstrated correct understanding, only then congratulate them (perhaps with house points), provide a concise summary of the correct concept, and immediately start a new cycle (Steps 1 & 2 repeated) by selecting ONE NEW misconception and asking the student to explain it." }]
-                },
-                config: {
-                    tools: [{ "google_search": {} }]
-                }
-            };
-
-            const apiUrl = `${API_BASE_URL}?key=${API_KEY}`;
-
+            // 3. Call API
             try {
-                const response = await fetchWithRetry(() => 
-                    fetch(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: contents,
+                        systemInstruction: {
+                            parts: [{ text: "You are Professor Minerva McGonagall. Stern, precise, fair. Goal: Biology Professor debunking misconceptions. Protocol: 1. Greet & ask name. 2. Select ONE misconception & ask student to explain. 3. If wrong, Socratic probing questions only. 4. If right, confirm & move to next." }]
+                        }
                     })
-                );
+                });
 
-                const result = await response.json();
-                const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-                if (text) {
-                    return text;
-                } else {
-                    const errorMsg = result.error?.message || "Model returned an empty or invalid response.";
-                    throw new Error(errorMsg);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error.message);
                 }
-            } catch (e) {
-                console.error("Gemini API call failed:", e);
-                showError("AI service failed to respond. Please try again.");
-                return null;
+
+                const reply = data.candidates[0].content.parts[0].text;
+                addMessage('model', reply);
+
+            } catch (error) {
+                errorMsg.textContent = "Error: " + error.message;
+                errorMsg.classList.remove('hidden');
             }
-        }
+        });
 
-        // --- EVENT HANDLERS ---
-
-        async function handleChatSubmit(e) {
-            e.preventDefault();
-
-            if (!isAuthReady) {
-                showError("Authentication is still loading. Please wait a moment.");
-                return;
-            }
-
-            const userMessage = userInput.value.trim();
-            if (!userMessage || isAITyping) return;
-
-            userInput.value = '';
-            userInput.placeholder = "Professor McGonagall is evaluating..."; 
-            userInput.disabled = true;
-            sendButton.disabled = true;
-            isAITyping = true;
-            renderChat(conversationHistory); 
-
-            await addMessageToFirestore('user', userMessage);
-
-            const aiResponseText = await getGeminiResponse(conversationHistory, userMessage);
+        function addMessage(role, text) {
+            conversationHistory.push({ role, text });
             
-            if (aiResponseText) {
-                await addMessageToFirestore('model', aiResponseText);
-            } else {
-                 await addMessageToFirestore('model', "I'm sorry, I was unable to process your request. Please check the console for API errors.");
-            }
-
-            isAITyping = false;
-            
-            const typingIndicator = document.getElementById('typing-indicator');
-            if (typingIndicator) {
-                typingIndicator.remove();
-            }
-
-            userInput.disabled = false;
-            sendButton.disabled = false;
-            userInput.focus();
-            
+            const div = document.createElement('div');
+            div.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+            div.innerHTML = `<div class="max-w-[80%] p-3 shadow-md ${role === 'user' ? 'user-message' : 'model-message'}">${text.replace(/\n/g, '<br>')}</div>`;
+            chatArea.appendChild(div);
             chatArea.scrollTop = chatArea.scrollHeight;
         }
-
-        // --- INITIALIZATION ---
-        chatForm.addEventListener('submit', handleChatSubmit);
-        initializeFirebase();
-
     </script>
 </body>
 </html>
