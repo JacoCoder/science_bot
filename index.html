@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gemini AI Chatbot</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔬</text></svg>">
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Use Inter font family -->
@@ -60,18 +61,26 @@
     <script type="module">
         // --- FIREBASE IMPORTS ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, addDoc, onSnapshot, collection, query, orderBy, setLogLevel, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, addDoc, onSnapshot, collection, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Global variables provided by the environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // --- CONFIGURATION ---
+        // YOUR FIREBASE CONFIG (Updated with your provided values)
+        const firebaseConfig = {
+            apiKey: "AIzaSyBR3rjG8RQFTkUPZSjYF9euF7DImjmJ5Gk",
+            authDomain: "mcgonagal-9f6d9.firebaseapp.com",
+            projectId: "mcgonagal-9f6d9",
+            storageBucket: "mcgonagal-9f6d9.firebasestorage.app",
+            messagingSenderId: "159827370618",
+            appId: "1:159827370618:web:fe5f2dacb92eb6323891c3"
+        };
 
-        // Configuration
+        // --- GEMINI API KEY (Updated) ---
+        const API_KEY = "AIzaSyAMfxn9cXjgdAs41VL34Tau0zUuNAE5gFU"; 
+
+        const appId = "mcgonagall-bot-v1";
         const MODEL_NAME = "gemini-2.5-flash-preview-09-2025";
         const API_BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent`;
-        const API_KEY = ""; // Canvas environment will provide the key if empty
 
         // UI elements
         const chatArea = document.getElementById('chat-area');
@@ -94,15 +103,12 @@
 
         /**
          * Implements exponential backoff for retrying failed API calls.
-         * @param {function} callback - The function that performs the fetch request.
-         * @param {number} maxRetries - Maximum number of retries.
          */
         async function fetchWithRetry(callback, maxRetries = 5) {
             for (let i = 0; i < maxRetries; i++) {
                 try {
                     const response = await callback();
                     if (response.status === 429) {
-                         // Too Many Requests, retry
                         const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
                         console.warn(`Rate limit hit (429). Retrying in ${Math.round(delay/1000)}s...`);
                         await new Promise(resolve => setTimeout(resolve, delay));
@@ -114,9 +120,7 @@
                     }
                     return response;
                 } catch (error) {
-                    if (i === maxRetries - 1) {
-                        throw error; // Throw the error if max retries reached
-                    }
+                    if (i === maxRetries - 1) throw error;
                     const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
                     console.error(`Attempt ${i + 1} failed. Retrying in ${Math.round(delay/1000)}s. Error: ${error.message}`);
                     await new Promise(resolve => setTimeout(resolve, delay));
@@ -126,17 +130,12 @@
 
         // --- FIREBASE / AUTHENTICATION ---
 
-        /**
-         * Initializes Firebase and authenticates the user.
-         */
         function initializeFirebase() {
             try {
-                // setLogLevel('debug'); // Uncomment for debugging Firestore/Auth issues
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // Listen for authentication state changes
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         userId = user.uid;
@@ -144,44 +143,23 @@
                         userIdDisplay.textContent = `User ID: ${userId}`;
                         setupRealtimeChatListener();
                     } else {
-                        // Attempt to sign in if not already authenticated
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(auth, initialAuthToken);
-                        } else {
-                            // Fallback to anonymous sign-in if no custom token is provided
-                            await signInAnonymously(auth);
-                        }
+                        await signInAnonymously(auth);
                     }
                 });
 
-                // Force sign-in attempt if not started by onAuthStateChanged
-                if (!auth.currentUser) {
-                    if (initialAuthToken) {
-                        signInWithCustomToken(auth, initialAuthToken).catch(e => console.error("Custom Auth failed:", e));
-                    } else {
-                        signInAnonymously(auth).catch(e => console.error("Anonymous Auth failed:", e));
-                    }
-                }
-
             } catch (e) {
                 console.error("Firebase Initialization Error:", e);
-                loadingInitial.innerHTML = `<p class="text-red-500">Error initializing application. See console for details.</p>`;
+                loadingInitial.innerHTML = `<p class="text-red-500">Error initializing application. Check console.</p>`;
             }
         }
 
 
         // --- FIRESTORE CHAT MANAGEMENT ---
 
-        /**
-         * Sets up the real-time listener for the chat history.
-         */
         function setupRealtimeChatListener() {
             if (!isAuthReady || !userId) return;
 
-            // Path for private user messages: /artifacts/{appId}/users/{userId}/messages
             const chatCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/messages`);
-            
-            // Query ordered by timestamp
             const q = query(chatCollectionRef, orderBy('timestamp', 'asc'));
 
             onSnapshot(q, (snapshot) => {
@@ -198,11 +176,6 @@
             });
         }
 
-        /**
-         * Adds a new message to Firestore.
-         * @param {string} role - 'user' or 'model'.
-         * @param {string} text - The message content.
-         */
         async function addMessageToFirestore(role, text) {
             if (!db || !userId) {
                 console.error("Database or User ID not available.");
@@ -215,7 +188,7 @@
                 await addDoc(chatCollectionRef, {
                     role: role,
                     text: text,
-                    timestamp: serverTimestamp() // Use server timestamp for accurate ordering
+                    timestamp: serverTimestamp() 
                 });
             } catch (e) {
                 console.error("Error adding document: ", e);
@@ -225,35 +198,24 @@
 
         // --- UI RENDERING ---
 
-        /**
-         * Renders the entire chat history to the UI.
-         * @param {Array<Object>} history - The conversation history array.
-         */
         function renderChat(history) {
-            chatArea.innerHTML = ''; // Clear existing messages
+            chatArea.innerHTML = ''; 
             
             history.forEach(message => {
                 const messageElement = createMessageElement(message.role, message.text);
                 chatArea.appendChild(messageElement);
             });
 
-            // Dynamic Placeholder Logic
             updatePlaceholder(history);
 
-            // Add the temporary typing indicator if needed
             if (isAITyping) {
                  const typingIndicator = createTypingIndicator();
                  chatArea.appendChild(typingIndicator);
             }
 
-            // Scroll to the bottom
             chatArea.scrollTop = chatArea.scrollHeight;
         }
 
-        /**
-         * Updates the input placeholder based on the context of the last message.
-         * @param {Array<Object>} history - The conversation history array.
-         */
         function updatePlaceholder(history) {
             if (history.length === 0) {
                 userInput.placeholder = "Say 'Hello' to start class...";
@@ -276,12 +238,6 @@
             }
         }
 
-        /**
-         * Creates a single chat message element.
-         * @param {string} role - 'user' or 'model'.
-         * @param {string} text - The message content.
-         * @returns {HTMLElement} The created div element.
-         */
         function createMessageElement(role, text) {
             const isUser = role === 'user';
             const messageWrapper = document.createElement('div');
@@ -289,15 +245,12 @@
 
             const messageBubble = document.createElement('div');
             messageBubble.className = `max-w-[80%] p-3 shadow-md ${isUser ? 'user-message' : 'model-message'}`;
-            messageBubble.innerHTML = formatText(text); // Use innerHTML for Markdown
+            messageBubble.innerHTML = formatText(text);
 
             messageWrapper.appendChild(messageBubble);
             return messageWrapper;
         }
 
-        /**
-         * Creates a simple typing indicator.
-         */
         function createTypingIndicator() {
             const messageWrapper = document.createElement('div');
             messageWrapper.id = 'typing-indicator';
@@ -306,7 +259,6 @@
             const messageBubble = document.createElement('div');
             messageBubble.className = 'max-w-[80%] p-3 shadow-md model-message';
             
-            // Simple pulsating dots
             messageBubble.innerHTML = `
                 <span class="inline-block h-2 w-2 bg-gray-600 rounded-full animate-pulse mx-0.5"></span>
                 <span class="inline-block h-2 w-2 bg-gray-600 rounded-full animate-pulse mx-0.5" style="animation-delay: 0.2s;"></span>
@@ -317,18 +269,10 @@
             return messageWrapper;
         }
 
-        /**
-         * Basic text formatting (handles newlines).
-         */
         function formatText(text) {
-            // Replace newlines with <br> for simple multi-line display
             return text.replace(/\n/g, '<br>');
         }
 
-        /**
-         * Displays a temporary error message in the footer.
-         * @param {string} message - The error message.
-         */
         function showError(message) {
             errorDisplay.textContent = `Error: ${message}`;
             errorDisplay.classList.remove('hidden');
@@ -337,29 +281,20 @@
 
         // --- GEMINI API INTEGRATION ---
 
-        /**
-         * Calls the Gemini API to get a response.
-         * @param {Array<Object>} history - The conversation history.
-         * @param {string} userMessage - The latest user message.
-         */
         async function getGeminiResponse(history, userMessage) {
-            // Map the Firestore history structure to the Gemini API contents structure
             const contents = history.map(msg => ({
                 role: msg.role,
                 parts: [{ text: msg.text }]
             }));
             
-            // Add the current user message to the contents array
             contents.push({ role: 'user', parts: [{ text: userMessage }] });
 
             const payload = {
                 contents: contents,
-                // Optional: Add system instructions to define the bot's persona
                 systemInstruction: {
                     parts: [{ text: "You are Professor Minerva McGonagall, Deputy Headmistress of Hogwarts School of Witchcraft and Wizardry and head of Gryffindor House. You are stern, precise, authoritative, but fair. You do not tolerate foolishness, but you deeply care about your students' education. Adopt her distinct manner of speaking: crisp, formal, and occasionally using magical metaphors (e.g., 'Five points to Gryffindor' for a good answer, or 'Do not be woolly-headed'). Your goal is to act as a Biology Professor specializing in debunking common scientific misconceptions. Your first and ONLY response to the student MUST be a crisp greeting, asking for their name, and demanding confirmation that they are ready to begin the Misconception Cycle. Do NOT start the cycle with the misconception challenges yet. Once the student has provided their name and confirmed they are ready, you MUST immediately begin the structured cycle. The cycle is now focused on one topic at a time. 1. You will select ONE common scientific misconception (from biology, physics, or general science) and ask the student to explain that specific misconception (e.g., 'Explain why we have seasons'). 2. If the student's explanation is incorrect or incomplete, you MUST NOT provide the correct answer. Instead, ask a follow-up, probing question designed to guide the student toward self-correction. Continue this probing dialogue until the student has demonstrated a strong understanding of the concept. 3. Once the student has demonstrated correct understanding, only then congratulate them (perhaps with house points), provide a concise summary of the correct concept, and immediately start a new cycle (Steps 1 & 2 repeated) by selecting ONE NEW misconception and asking the student to explain it." }]
                 },
                 config: {
-                    // Optional: You can enable Google Search grounding here if needed for real-time information
                     tools: [{ "google_search": {} }]
                 }
             };
@@ -393,10 +328,6 @@
 
         // --- EVENT HANDLERS ---
 
-        /**
-         * Handles the form submission.
-         * @param {Event} e - The form submit event.
-         */
         async function handleChatSubmit(e) {
             e.preventDefault();
 
@@ -408,32 +339,25 @@
             const userMessage = userInput.value.trim();
             if (!userMessage || isAITyping) return;
 
-            // 1. Disable input and set typing state
             userInput.value = '';
-            userInput.placeholder = "Professor McGonagall is evaluating..."; // Immediate feedback
+            userInput.placeholder = "Professor McGonagall is evaluating..."; 
             userInput.disabled = true;
             sendButton.disabled = true;
             isAITyping = true;
-            renderChat(conversationHistory); // Renders the typing indicator
+            renderChat(conversationHistory); 
 
-            // 2. Save user message to Firestore (which triggers UI update via onSnapshot)
             await addMessageToFirestore('user', userMessage);
 
-            // 3. Get AI response
             const aiResponseText = await getGeminiResponse(conversationHistory, userMessage);
             
-            // 4. Save AI response to Firestore
             if (aiResponseText) {
                 await addMessageToFirestore('model', aiResponseText);
             } else {
-                 // Save a fallback error message if the AI failed
                  await addMessageToFirestore('model', "I'm sorry, I was unable to process your request. Please check the console for API errors.");
             }
 
-            // 5. Reset state
             isAITyping = false;
             
-            // Remove the temporary typing indicator and re-render the chat
             const typingIndicator = document.getElementById('typing-indicator');
             if (typingIndicator) {
                 typingIndicator.remove();
@@ -443,7 +367,6 @@
             sendButton.disabled = false;
             userInput.focus();
             
-            // Scroll to the bottom one last time to ensure the final message is visible
             chatArea.scrollTop = chatArea.scrollHeight;
         }
 
