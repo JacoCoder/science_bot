@@ -87,24 +87,36 @@
 
         // Handle Authentication
         if (auth) {
-            onAuthStateChanged(auth, (user) => {
+            onAuthStateChanged(auth, async (user) => {
+                let currentUserId = null;
+                
                 if (user) {
-                    userId = user.uid;
-                } else if (!user) {
-                    // Sign in if not authenticated
-                    const signIn = initialAuthToken 
-                        ? signInWithCustomToken(auth, initialAuthToken)
-                        : signInAnonymously(auth);
-                    
-                    signIn.then(cred => {
-                        userId = cred.user.uid;
-                    }).catch(error => console.error("Firebase Sign-in Failed:", error));
+                    // 1. User is already authenticated
+                    currentUserId = user.uid;
+                } else {
+                    // 2. User needs to sign in (anonymously or with custom token)
+                    try {
+                        const signInPromise = initialAuthToken 
+                            ? signInWithCustomToken(auth, initialAuthToken)
+                            : signInAnonymously(auth);
+                        
+                        const cred = await signInPromise; // Await the sign-in promise
+                        currentUserId = cred.user.uid;
+
+                    } catch (error) {
+                        console.error("Firebase Sign-in Failed:", error);
+                        // currentUserId remains null on failure
+                    }
                 }
-                // Once we have a user ID (anonymous or custom token), we can start listening for data
-                if (userId) {
+                
+                // 3. Dispatch ready state ONLY if we successfully obtained a userId and haven't already
+                if (currentUserId && !isAuthReady) { 
+                    userId = currentUserId;
                     isAuthReady = true;
                     // Start listening for chat messages
                     document.dispatchEvent(new CustomEvent('authReady')); 
+                } else if (!currentUserId) {
+                     console.error("Authentication failed: Could not determine user ID. Chat functions disabled.");
                 }
             });
         }
