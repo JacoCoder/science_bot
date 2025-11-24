@@ -234,10 +234,11 @@
                     if (imageUrl.includes("via.placeholder.com") && imageUrl.includes("?text=")) {
                         const textMatch = imageUrl.match(/\?text=(.*)/);
                         if (textMatch && textMatch[1]) {
+                             // Use bold red text for error messages
                              const altText = decodeURIComponent(textMatch[1]).replace(/\+/g, ' ');
                              const caption = document.createElement('p');
-                             caption.className = "text-xs italic text-gray-500 mt-2";
-                             caption.textContent = `[Image: ${altText}]`;
+                             caption.className = "text-xs font-bold text-red-700 mt-2";
+                             caption.textContent = `[FAILURE: ${altText}]`;
                              messageBubble.appendChild(caption);
                         }
                     }
@@ -319,7 +320,7 @@
         }
 
         /**
-         * Generates an image using the Imagen API and returns a data URL.
+         * Generates an image using the Imagen API and returns a data URL or an error placeholder URL.
          */
         async function generateImage(prompt) {
             const imagePayload = { 
@@ -337,6 +338,7 @@
 
                     if (!res.ok) {
                         const errorBody = await res.text();
+                        // This indicates a 4xx or 5xx error from the API (e.g., Invalid API Key/Model not found)
                         throw new Error(`Image API request failed with status ${res.status}: ${errorBody}`);
                     }
                     return res.json();
@@ -349,13 +351,13 @@
                 }
 
                 console.error("Image generation failed: No base64 data received.");
-                // Return a cute, non-obtrusive fallback placeholder
-                return `https://via.placeholder.com/200/F4C2C2/FFFFFF?text=Magic+Glitch`;
+                // Diagnostic placeholder for missing base64 data
+                return `https://via.placeholder.com/300/F44336/FFFFFF?text=IMAGE+ERROR%3A+No+Data+Received`;
 
             } catch (error) {
                 console.error("Image generation API call failed:", error);
-                // Return a cute, non-obtrusive fallback placeholder
-                return `https://via.placeholder.com/200/F4C2C2/FFFFFF?text=Magic+Glitch`;
+                // Diagnostic placeholder for network or API Key failure
+                return `https://via.placeholder.com/300/F44336/FFFFFF?text=IMAGE+ERROR%3A+API+Call+Failed`;
             }
         }
 
