@@ -33,12 +33,15 @@
         <!-- Chat Messages Area -->
         <main id="chat-area" class="chat-area flex-grow p-4 space-y-4">
             <!-- Messages will be injected here -->
-            <div id="loading-initial" class="flex justify-center items-center h-full text-gray-500">
-                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Loading chat history...
+            <div id="loading-initial" class="flex justify-center items-center h-full text-gray-500 flex-col">
+                <div id="spinner">
+                    <svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+                <p class="mt-2">Loading chat history...</p>
+                <p id="debug-log" class="text-xs text-gray-400 mt-4 max-w-md text-center hidden"></p>
             </div>
         </main>
 
@@ -65,7 +68,7 @@
         import { getFirestore, doc, addDoc, onSnapshot, collection, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- CONFIGURATION ---
-        // YOUR FIREBASE CONFIG (Updated with your provided values)
+        // REPLACE WITH YOUR FIREBASE CONFIG
         const firebaseConfig = {
             apiKey: "AIzaSyBR3rjG8RQFTkUPZSjYF9euF7DImjmJ5Gk",
             authDomain: "mcgonagal-9f6d9.firebaseapp.com",
@@ -75,7 +78,7 @@
             appId: "1:159827370618:web:fe5f2dacb92eb6323891c3"
         };
 
-        // --- GEMINI API KEY (Updated) ---
+        // REPLACE WITH YOUR GEMINI API KEY
         const API_KEY = "AIzaSyAMfxn9cXjgdAs41VL34Tau0zUuNAE5gFU"; 
 
         const appId = "mcgonagall-bot-v1";
@@ -90,20 +93,24 @@
         const errorDisplay = document.getElementById('error-message');
         const userIdDisplay = document.getElementById('user-id-display');
         const loadingInitial = document.getElementById('loading-initial');
+        const debugLog = document.getElementById('debug-log');
 
         // State
         let db;
         let auth;
         let userId = null;
         let isAuthReady = false;
-        let conversationHistory = []; // Stores the history in Firestore format for UI display
+        let conversationHistory = [];
         let isAITyping = false;
         
         // --- UTILITY FUNCTIONS ---
 
-        /**
-         * Implements exponential backoff for retrying failed API calls.
-         */
+        function logDebug(message) {
+            console.log(message);
+            debugLog.textContent = message;
+            debugLog.classList.remove('hidden');
+        }
+
         async function fetchWithRetry(callback, maxRetries = 5) {
             for (let i = 0; i < maxRetries; i++) {
                 try {
@@ -132,24 +139,32 @@
 
         function initializeFirebase() {
             try {
+                logDebug("Initializing Firebase...");
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
+                        logDebug("User authenticated: " + user.uid);
                         userId = user.uid;
                         isAuthReady = true;
-                        userIdDisplay.textContent = `User ID: ${userId}`;
+                        userIdDisplay.textContent = `Student ID: ${userId.substring(0, 6)}...`;
                         setupRealtimeChatListener();
                     } else {
-                        await signInAnonymously(auth);
+                        logDebug("Signing in anonymously...");
+                        try {
+                            await signInAnonymously(auth);
+                        } catch (signInError) {
+                            logDebug("Sign-in failed: " + signInError.message);
+                            loadingInitial.innerHTML = `<p class="text-red-500">Connection failed. Please refresh.</p>`;
+                        }
                     }
                 });
 
             } catch (e) {
                 console.error("Firebase Initialization Error:", e);
-                loadingInitial.innerHTML = `<p class="text-red-500">Error initializing application. Check console.</p>`;
+                loadingInitial.innerHTML = `<p class="text-red-500">Error initializing application. See console.</p>`;
             }
         }
 
@@ -159,10 +174,20 @@
         function setupRealtimeChatListener() {
             if (!isAuthReady || !userId) return;
 
+            logDebug("Connecting to chat history...");
             const chatCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/messages`);
             const q = query(chatCollectionRef, orderBy('timestamp', 'asc'));
 
+            // Set a timeout to clear loader if Firestore is slow/empty
+            const loaderTimeout = setTimeout(() => {
+                if (loadingInitial && !loadingInitial.classList.contains('hidden')) {
+                    loadingInitial.classList.add('hidden');
+                    logDebug("Loader cleared (timeout). Ready to chat.");
+                }
+            }, 3000); 
+
             onSnapshot(q, (snapshot) => {
+                clearTimeout(loaderTimeout); // Clear timeout if data arrives
                 const updatedHistory = [];
                 snapshot.forEach((doc) => {
                     updatedHistory.push({ id: doc.id, ...doc.data() });
@@ -172,7 +197,10 @@
                 loadingInitial.classList.add('hidden');
             }, (error) => {
                 console.error("Firestore real-time error:", error);
-                loadingInitial.innerHTML = `<p class="text-red-500">Error loading chat history. See console for details.</p>`;
+                logDebug("Firestore Error: " + error.message);
+                // Even if error, hide loader so user can try to type (though it might fail)
+                loadingInitial.classList.add('hidden'); 
+                showError("Could not load history. Check connection.");
             });
         }
 
@@ -192,7 +220,7 @@
                 });
             } catch (e) {
                 console.error("Error adding document: ", e);
-                showError("Failed to save message to history.");
+                showError("Failed to save message. Check permissions.");
             }
         }
 
@@ -201,6 +229,11 @@
         function renderChat(history) {
             chatArea.innerHTML = ''; 
             
+            if (history.length === 0) {
+                // Optional: Show a welcome message if history is empty
+                chatArea.innerHTML = `<div class="text-center text-gray-400 mt-10"><p>Class is in session.</p><p>Say "Hello" to Professor McGonagall.</p></div>`;
+            }
+
             history.forEach(message => {
                 const messageElement = createMessageElement(message.role, message.text);
                 chatArea.appendChild(messageElement);
